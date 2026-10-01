@@ -47,24 +47,6 @@
     <button class="b" id="pp">Pause</button>
     <button class="b" id="mute">Unmute</button>
   </div>
-  <label>Volume <b id="volV">100%</b></label>
-  <input type="range" id="vol" min="0" max="1" step=".01" value="1">
-  <label class="file" style="margin-top:6px">Load another video…<input type="file" id="file" accept="video/*" hidden></label>
-
-  <h2>View</h2>
-  <label>Field of view <b id="fovV">70°</b></label>
-  <input type="range" id="fov" min="30" max="110" step="1" value="70">
-  <label>Seat depth (Z) <b id="zV">38</b></label>
-  <input type="range" id="seatZ" min="2" max="66" step=".5" value="38">
-  <button class="b" id="reset">Reset view</button>
-
-  <h2>Video mapping (Blender)</h2>
-  <label>Scale <b id="scV">0.113</b></label>
-  <input type="range" id="sc" min="0.04" max="0.2" step=".001" value="0.113">
-  <label>Offset U <b id="ouV">0.500</b></label>
-  <input type="range" id="ou" min="0" max="1" step=".001" value="0.5">
-  <label>Offset V <b id="ovV">-0.498</b></label>
-  <input type="range" id="ov" min="-1" max="1" step=".001" value="-0.498">
   <div id="status">Loading…</div>
 </aside>
 <button id="tog" title="Toggle sidebar">☰</button>
@@ -133,10 +115,9 @@ new GLTFLoader().setDRACOLoader(draco).load('screenx.glb', gltf => {
     const p = target.getWorldPosition(new THREE.Vector3());
     seat.set(p.x, p.y, Math.abs(p.z) < 5 ? DEFAULT_SEAT_Z : p.z);
     S.seatZ = seat.z;
-    $('seatZ').value = S.seatZ; $('zV').textContent = S.seatZ;
   }
   applyMapping();
-  $('status').textContent = 'Drag to look around · scroll to zoom';
+  $('status').textContent = 'Drag to look around';
 }, undefined, e => $('status').textContent = 'GLB failed to load: ' + (e.message || e));
 
 /* Blender "Texture Coordinate: Object → Mapping (Point)": uv = objectCoord * scale + location.
@@ -178,9 +159,6 @@ cv.addEventListener('pointermove', e => {
   drag = { x: e.clientX, y: e.clientY };
 });
 cv.addEventListener('pointerup', () => drag = null);
-cv.addEventListener('wheel', e => { setFov(S.fov + Math.sign(e.deltaY) * 3); e.preventDefault(); }, { passive: false });
-
-function setFov(v) { S.fov = Math.max(30, Math.min(110, v)); $('fov').value = S.fov; $('fovV').textContent = Math.round(S.fov) + '°'; }
 
 /* ---------- VR split: render once, mirror into both halves ---------- */
 const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
@@ -243,14 +221,6 @@ $('exit').onclick = exitSplit;
 $('tog').onclick = () => $('side').classList.toggle('hide');
 $('pp').onclick = () => { video.paused ? video.play() : video.pause(); $('pp').textContent = video.paused ? 'Play' : 'Pause'; };
 $('mute').onclick = () => { video.muted = !video.muted; $('mute').textContent = video.muted ? 'Unmute' : 'Mute'; if (!video.muted) video.play(); };
-$('vol').oninput = e => { video.volume = +e.target.value; $('volV').textContent = Math.round(e.target.value * 100) + '%'; };
-$('file').onchange = e => { const f = e.target.files[0]; if (f) { video.src = URL.createObjectURL(f); video.play(); $('status').textContent = f.name; } };
-$('fov').oninput = e => setFov(+e.target.value);
-$('seatZ').oninput = e => { S.seatZ = +e.target.value; $('zV').textContent = S.seatZ; };
-$('reset').onclick = () => { S.yaw = S.pitch = 0; setFov(70); };
-for (const [id, key, lab, dec] of [['sc', 'scale', 'scV', 3], ['ou', 'offU', 'ouV', 3], ['ov', 'offV', 'ovV', 3]]) {
-  $(id).oninput = e => { S[key] = +e.target.value; $(lab).textContent = S[key].toFixed(dec); applyMapping(); };
-}
 </script>
 </body>
 </html>
