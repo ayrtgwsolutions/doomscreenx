@@ -150,15 +150,42 @@ setInterval(() => {
 /* ---------- look controls ---------- */
 const cv = renderer.domElement;
 let drag = null;
-cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerdown', e => { if (S.split && gyro.has) { gyro.cal = false; return; } drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener('pointermove', e => {
-  if (!drag) return;
+  if (!drag || (S.split && gyro.has)) return;
   const k = 0.0045 * (S.fov / 70);
   S.yaw -= (e.clientX - drag.x) * k;
   S.pitch = Math.max(-1.45, Math.min(1.45, S.pitch - (e.clientY - drag.y) * k));
   drag = { x: e.clientX, y: e.clientY };
 });
 cv.addEventListener('pointerup', () => drag = null);
+
+/* ---------- device orientation (drives the camera in split mode) ---------- */
+const gyro = { has: false, cal: false, yawOff: new THREE.Quaternion(), q: new THREE.Quaternion() };
+const _e = new THREE.Euler(), _q1 = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2),
+      _q0 = new THREE.Quaternion(), _zee = new THREE.Vector3(0, 0, 1), _up = new THREE.Vector3(0, 1, 0);
+function onOrient(e) {
+  if (!S.split || e.alpha == null || e.beta == null || e.gamma == null) return;
+  const r = THREE.MathUtils.degToRad;
+  const orient = r(screen.orientation?.angle ?? window.orientation ?? 0);
+  _e.set(r(e.beta), r(e.alpha), -r(e.gamma), 'YXZ');
+  gyro.q.setFromEuler(_e).multiply(_q1).multiply(_q0.setFromAxisAngle(_zee, -orient));
+  if (!gyro.cal) {                       // face the screen on entry / tap
+    _e.setFromQuaternion(gyro.q, 'YXZ');
+    gyro.yawOff.setFromAxisAngle(_up, -_e.y);
+    gyro.cal = true;
+  }
+  gyro.q.premultiply(gyro.yawOff);
+  gyro.has = true;
+}
+async function startGyro() {             // must run inside the click gesture (iOS permission)
+  const D = window.DeviceOrientationEvent;
+  if (D && typeof D.requestPermission === 'function') {
+    try { if (await D.requestPermission() !== 'granted') return; } catch (e) { return; }
+  }
+  removeEventListener('deviceorientation', onOrient);
+  addEventListener('deviceorientation', onOrient);
+}
 
 /* ---------- VR split: render once, mirror into both halves ---------- */
 const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
@@ -169,6 +196,8 @@ const blitScene = new THREE.Scene(); blitScene.add(blitQuad);
 const blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
 function enterSplit() {
+  startGyro();
+  gyro.has = false; gyro.cal = false;
   S.split = true;
   document.body.classList.add('split');
   document.documentElement.requestFullscreen?.().catch(() => {});
@@ -177,6 +206,7 @@ function enterSplit() {
 function exitSplit() {
   if (!S.split) return;
   S.split = false;
+  gyro.has = false; gyro.cal = false;
   document.body.classList.remove('split');
   renderer.setScissorTest(false);
   renderer.autoClear = true;
@@ -190,7 +220,8 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 
 function render() {
   camera.position.copy(seat); camera.position.z = S.seatZ;
-  camera.rotation.set(S.pitch, S.yaw, 0);
+  if (S.split && gyro.has) camera.quaternion.copy(gyro.q);
+  else camera.rotation.set(S.pitch, S.yaw, 0);
   camera.fov = S.fov;
   const W = innerWidth, H = innerHeight;
   if (!S.split) { camera.aspect = W / H; camera.updateProjectionMatrix(); renderer.render(scene, camera); return; }
