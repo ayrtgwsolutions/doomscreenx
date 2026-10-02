@@ -73,27 +73,59 @@ document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050506);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.25));
-/* Light bounces: 4 layers of lights marching back through the room, each layer dimmer and
-   more blended toward the average screen colour (= light that has bounced more times). */
-const COLS = 4;
-const LAYERS = [{ z: 6, i: 5, x: 26, mix: 0 }, { z: 22, i: 3.5, x: 34, mix: .3 },
-                { z: 40, i: 2.5, x: 42, mix: .55 }, { z: 58, i: 1.8, x: 48, mix: .8 }];
+/* Light bounces: lights sit just in front of each screen and have a short reach (distance cut-off),
+   so only the wall areas next to the bright screens pick up light. Layer 2 is a dimmer, wider, more
+   blended second bounce. Built from the screen meshes once the GLB has loaded. */
+const LAYERS = [{ i: 60, d: 8, off: 1.5, mix: 0 }, { i: 35, d: 14, off: 5, mix: .5 }];
 const lights = [];
-LAYERS.forEach((L, li) => { for (let c = 0; c < COLS; c++) {
-  const l = new THREE.PointLight(0xffffff, L.i, 0, 0);
-  l.position.set(((c + .5) / COLS * 2 - 1) * L.x, li % 2 ? 5 : -5, L.z);
-  l.userData = { base: L.i, mix: L.mix, col: c };
-  scene.add(l); lights.push(l);
-} });
+function buildLights() {
+  const v = new THREE.Vector3(), n = new THREE.Vector3(), nm = new THREE.Matrix3();
+  for (const m of screens) {
+    const loc = m.geometry.userData.local;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (let i = 0; i < loc.length; i += 3) {
+      x0 = Math.min(x0, loc[i]); x1 = Math.max(x1, loc[i]); z0 = Math.min(z0, loc[i + 2]); z1 = Math.max(z1, loc[i + 2]);
+    }
+    const cnt = m.name === 'main' ? 4 : 3, zm = (z0 + z1) / 2;
+    nm.getNormalMatrix(m.matrixWorld);
+    n.set(0, 1, 0).applyMatrix3(nm).normalize();
+    for (let k = 0; k < cnt; k++) {
+      const x = x0 + (x1 - x0) * (k + .5) / cnt;
+      v.set(x, 0, zm).applyMatrix4(m.matrixWorld);
+      const nn = n.clone(); if (nn.dot(seat.clone().sub(v)) < 0) nn.negate();   // point into the room
+      for (const L of LAYERS) {
+        const l = new THREE.PointLight(0xffffff, L.i, L.d, 2);
+        l.position.copy(v).addScaledVector(nn, L.off);
+        l.userData = { base: L.i, mix: L.mix, u: x * S.scale + S.offU };
+        scene.add(l); lights.push(l);
+      }
+    }
+  }
+}
 
 /* Walls: stay near-black but catch light; animated film grain scales with the light that hits them. */
-const wallU = { uTime: { value: 0 }, uGrain: { value: 0.9 }, uFloor: { value: 0.05 } };
+const wallU = { uTime: { value: 0 }, uGrain: { value: 1.2 }, uFloor: { value: 0.05 } };
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide });
 wallMat.onBeforeCompile = sh => {
   Object.assign(sh.uniforms, wallU);
-  sh.fragmentShader = 'uniform float uTime, uGrain, uFloor;\nfloat gh(vec2 p){return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);}\n' + sh.fragmentShader
+  // grain is fixed to the wall surface (world space) at millimetre scale, two octaves, re-rolled 24x/s
+  sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader
+    .replace('#include <project_vertex>', '#include <project_vertex>\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  sh.fragmentShader = `uniform float uTime, uGrain, uFloor;
+varying vec3 vWP;
+float h3(vec3 p, float seed) {
+  uvec3 q = uvec3(ivec3(floor(p)) + 4096) + uint(seed) * uvec3(7u, 13u, 29u);
+  q = q * 1664525u + 1013904223u;
+  q.x += q.y * q.z; q.y += q.z * q.x; q.z += q.x * q.y;
+  q ^= q >> 16u;
+  q.x += q.y * q.z;
+  return float(q.x) * (1.0 / 4294967295.0);
+}
+` + sh.fragmentShader
     .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb = max(diffuseColor.rgb, vec3(uFloor));')
-    .replace('#include <opaque_fragment>', 'outgoingLight *= 1.0 + (gh(gl_FragCoord.xy + uTime * 7.31) - 0.5) * uGrain * 2.0;\n#include <opaque_fragment>');
+    .replace('#include <opaque_fragment>', `float gr = (h3(vWP * 260.0, uTime) - 0.5) * 0.6 + (h3(vWP * 1100.0, uTime + 17.0) - 0.5) * 0.4;
+  outgoingLight *= 1.0 + gr * uGrain * 2.0;
+#include <opaque_fragment>`);
 };
 
 const FOV_NORMAL = 70, FOV_SPLIT = 100;
@@ -140,6 +172,7 @@ new GLTFLoader().setDRACOLoader(draco).load('screenx.glb', gltf => {
     seat.set(p.x, p.y, Math.abs(p.z) < 5 ? DEFAULT_SEAT_Z : p.z);
     S.seatZ = seat.z;
   }
+  buildLights();
   applyMapping();
   $('status').textContent = 'Drag to look around';
 }, undefined, e => $('status').textContent = 'GLB failed to load: ' + (e.message || e));
@@ -157,21 +190,25 @@ function applyMapping() {
 }
 
 /* ---------- light spill from the video onto the walls ---------- */
-const sc = document.createElement('canvas'); sc.width = COLS; sc.height = 1;
+const N = 48;
+const sc = document.createElement('canvas'); sc.width = N; sc.height = 1;
 const sctx = sc.getContext('2d', { willReadFrequently: true });
-const cols = Array.from({ length: COLS }, () => new THREE.Color()), avg = new THREE.Color(), tmp = new THREE.Color();
+const avg = new THREE.Color(), tmp = new THREE.Color(), px = Array.from({ length: N }, () => new THREE.Color());
 setInterval(() => {
-  if (video.readyState < 2 || !video.videoWidth) return;
+  if (video.readyState < 2 || !video.videoWidth || !lights.length) return;
   try {
     const w = video.videoWidth, h = video.videoHeight;
     const vc = ((S.offV % 1) + 1) % 1;
     const sy = Math.max(0, (1 - vc - S.scale) * h), sh = Math.min(h - sy, 2 * S.scale * h);
-    sctx.drawImage(video, 0, sy, w, Math.max(1, sh), 0, 0, COLS, 1);
-    const d = sctx.getImageData(0, 0, COLS, 1).data;
+    sctx.drawImage(video, 0, sy, w, Math.max(1, sh), 0, 0, N, 1);
+    const d = sctx.getImageData(0, 0, N, 1).data;
     avg.setRGB(0, 0, 0);
-    cols.forEach((c, i) => { c.setRGB(d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255, THREE.SRGBColorSpace); avg.add(c); });
-    avg.multiplyScalar(1 / COLS);
-    lights.forEach(l => l.color.copy(tmp.copy(cols[l.userData.col]).lerp(avg, l.userData.mix)));
+    px.forEach((c, i) => { c.setRGB(d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255, THREE.SRGBColorSpace); avg.add(c); });
+    avg.multiplyScalar(1 / N);
+    lights.forEach(l => {
+      const i = Math.max(0, Math.min(N - 1, Math.round(l.userData.u * (N - 1))));
+      l.color.copy(tmp.copy(px[i]).lerp(avg, l.userData.mix));
+    });
   } catch (e) { /* tainted or not ready */ }
 }, 150);
 
