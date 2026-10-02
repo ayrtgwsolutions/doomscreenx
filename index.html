@@ -119,8 +119,8 @@ new GLTFLoader().setDRACOLoader(draco).load('screenx.glb', gltf => {
         roughness: 0.9,
         metalness: 0.1,
         side: THREE.DoubleSide
-    }
   });
+    }
   if (target) {                                // camera position = Camera Location Target Point
     const p = target.getWorldPosition(new THREE.Vector3());
     seat.set(p.x, p.y, Math.abs(p.z) < 5 ? DEFAULT_SEAT_Z : p.z);
