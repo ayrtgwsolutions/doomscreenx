@@ -73,12 +73,28 @@ document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050506);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.25));
-const lights = [-20, 0, 20].map(x => {
-  const l = new THREE.PointLight(0xffffff, 1.5, 0, 0);
-  l.position.set(x, 0, 12);
-  scene.add(l);
-  return l;
-});
+/* Light bounces: 4 layers of lights marching back through the room, each layer dimmer and
+   more blended toward the average screen colour (= light that has bounced more times). */
+const COLS = 4;
+const LAYERS = [{ z: 6, i: 5, x: 26, mix: 0 }, { z: 22, i: 3.5, x: 34, mix: .3 },
+                { z: 40, i: 2.5, x: 42, mix: .55 }, { z: 58, i: 1.8, x: 48, mix: .8 }];
+const lights = [];
+LAYERS.forEach((L, li) => { for (let c = 0; c < COLS; c++) {
+  const l = new THREE.PointLight(0xffffff, L.i, 0, 0);
+  l.position.set(((c + .5) / COLS * 2 - 1) * L.x, li % 2 ? 5 : -5, L.z);
+  l.userData = { base: L.i, mix: L.mix, col: c };
+  scene.add(l); lights.push(l);
+} });
+
+/* Walls: stay near-black but catch light; animated film grain scales with the light that hits them. */
+const wallU = { uTime: { value: 0 }, uGrain: { value: 0.9 }, uFloor: { value: 0.05 } };
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide });
+wallMat.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, wallU);
+  sh.fragmentShader = 'uniform float uTime, uGrain, uFloor;\nfloat gh(vec2 p){return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);}\n' + sh.fragmentShader
+    .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb = max(diffuseColor.rgb, vec3(uFloor));')
+    .replace('#include <opaque_fragment>', 'outgoingLight *= 1.0 + (gh(gl_FragCoord.xy + uTime * 7.31) - 0.5) * uGrain * 2.0;\n#include <opaque_fragment>');
+};
 
 const FOV_NORMAL = 70, FOV_SPLIT = 100;
 const camera = new THREE.PerspectiveCamera(FOV_NORMAL, 1, 0.1, 400);
@@ -116,12 +132,7 @@ new GLTFLoader().setDRACOLoader(draco).load('screenx.glb', gltf => {
       o.material = screenMat;
       screens.push(o);
     } else {
-      o.material = new THREE.MeshStandardMaterial({
-        color: 0x050505,                      // 0x000000 for pure black
-        roughness: 0.9,
-        metalness: 0.1,
-        side: THREE.DoubleSide                // walls: visible from inside
-      });
+      o.material = wallMat;                   // walls: visible from inside
     }
   });
   if (target) {                                // camera position = Camera Location Target Point
@@ -146,17 +157,21 @@ function applyMapping() {
 }
 
 /* ---------- light spill from the video onto the walls ---------- */
-const sc = document.createElement('canvas'); sc.width = 3; sc.height = 1;
+const sc = document.createElement('canvas'); sc.width = COLS; sc.height = 1;
 const sctx = sc.getContext('2d', { willReadFrequently: true });
+const cols = Array.from({ length: COLS }, () => new THREE.Color()), avg = new THREE.Color(), tmp = new THREE.Color();
 setInterval(() => {
   if (video.readyState < 2 || !video.videoWidth) return;
   try {
     const w = video.videoWidth, h = video.videoHeight;
     const vc = ((S.offV % 1) + 1) % 1;
     const sy = Math.max(0, (1 - vc - S.scale) * h), sh = Math.min(h - sy, 2 * S.scale * h);
-    sctx.drawImage(video, 0, sy, w, Math.max(1, sh), 0, 0, 3, 1);
-    const d = sctx.getImageData(0, 0, 3, 1).data;
-    lights.forEach((l, i) => l.color.setRGB(d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255, THREE.SRGBColorSpace));
+    sctx.drawImage(video, 0, sy, w, Math.max(1, sh), 0, 0, COLS, 1);
+    const d = sctx.getImageData(0, 0, COLS, 1).data;
+    avg.setRGB(0, 0, 0);
+    cols.forEach((c, i) => { c.setRGB(d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255, THREE.SRGBColorSpace); avg.add(c); });
+    avg.multiplyScalar(1 / COLS);
+    lights.forEach(l => l.color.copy(tmp.copy(cols[l.userData.col]).lerp(avg, l.userData.mix)));
   } catch (e) { /* tainted or not ready */ }
 }, 150);
 
@@ -231,7 +246,13 @@ function exitSplit() {
 addEventListener('keydown', e => { if (e.key === 'Escape') exitSplit(); });
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) exitSplit(); });
 
+let lastTick = -1;
 function render() {
+  const tick = Math.floor(performance.now() / 1000 * 24);   // 24 fps grain
+  if (tick !== lastTick) {
+    lastTick = tick; wallU.uTime.value = tick % 1000;
+    for (const l of lights) l.intensity = l.userData.base * (1 + (Math.random() - .5) * .3);
+  }
   rig.position.set(seat.x, seat.y, S.seatZ);
   if (renderer.xr.isPresenting) { renderer.render(scene, camera); return; }   // headset drives camera + FOV
   camera.fov = S.split ? FOV_SPLIT : FOV_NORMAL;
