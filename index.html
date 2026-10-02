@@ -76,7 +76,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.25));
 /* Light bounces: lights sit just in front of each screen and have a short reach (distance cut-off),
    so only the wall areas next to the bright screens pick up light. Layer 2 is a dimmer, wider, more
    blended second bounce. Built from the screen meshes once the GLB has loaded. */
-const LAYERS = [{ i: 160, d: 8, off: 1.5, mix: 0 }, { i: 95, d: 14, off: 5, mix: .5 }];
+const LAYERS = [{ i: 640, d: 32, off: 1.5, mix: 0 }, { i: 95, d: 14, off: 5, mix: .5 }];
 const lights = [];
 function buildLights() {
   const v = new THREE.Vector3(), n = new THREE.Vector3(), nm = new THREE.Matrix3();
