@@ -76,7 +76,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.25));
 /* Light bounces: lights sit just in front of each screen and have a short reach (distance cut-off),
    so only the wall areas next to the bright screens pick up light. Layer 2 is a dimmer, wider, more
    blended second bounce. Built from the screen meshes once the GLB has loaded. */
-const LAYERS = [{ i: 60, d: 8, off: 1.5, mix: 0 }, { i: 35, d: 14, off: 5, mix: .5 }];
+const LAYERS = [{ i: 160, d: 8, off: 1.5, mix: 0 }, { i: 95, d: 14, off: 5, mix: .5 }];
 const lights = [];
 function buildLights() {
   const v = new THREE.Vector3(), n = new THREE.Vector3(), nm = new THREE.Matrix3();
@@ -108,7 +108,7 @@ const wallU = { uTime: { value: 0 }, uGrain: { value: 1.2 }, uFloor: { value: 0.
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide });
 wallMat.onBeforeCompile = sh => {
   Object.assign(sh.uniforms, wallU);
-  // grain is fixed to the wall surface (world space) at millimetre scale, two octaves, re-rolled 24x/s
+  // grain is fixed to the wall surface (world space) at millimetre scale, two octaves, re-rolled every frame
   sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader
     .replace('#include <project_vertex>', '#include <project_vertex>\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   sh.fragmentShader = `uniform float uTime, uGrain, uFloor;
@@ -283,13 +283,10 @@ function exitSplit() {
 addEventListener('keydown', e => { if (e.key === 'Escape') exitSplit(); });
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) exitSplit(); });
 
-let lastTick = -1;
+let frame = 0;
 function render() {
-  const tick = Math.floor(performance.now() / 1000 * 24);   // 24 fps grain
-  if (tick !== lastTick) {
-    lastTick = tick; wallU.uTime.value = tick % 1000;
-    for (const l of lights) l.intensity = l.userData.base * (1 + (Math.random() - .5) * .3);
-  }
+  wallU.uTime.value = (frame++) % 100000;       // grain re-rolls every frame (no fps cap)
+  for (const l of lights) l.intensity = l.userData.base * (1 + (Math.random() - .5) * .3);
   rig.position.set(seat.x, seat.y, S.seatZ);
   if (renderer.xr.isPresenting) { renderer.render(scene, camera); return; }   // headset drives camera + FOV
   camera.fov = S.split ? FOV_SPLIT : FOV_NORMAL;
