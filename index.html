@@ -30,6 +30,7 @@
     padding:6px 14px;border:0;border-radius:99px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;cursor:pointer}
   body.split #side,body.split #tog{display:none}
   body.split #exit{display:block}
+  video{display:none}
 </style>
 <script type="importmap">
 {"imports":{
@@ -89,9 +90,10 @@ renderer.xr.setReferenceSpaceType('local');
 
 /* ---------- video + shared screen material ---------- */
 const video = document.createElement('video');
+document.body.appendChild(video);
 Object.assign(video, { src: 'doomsday.mp4', loop: true, muted: true, playsInline: true, crossOrigin: 'anonymous' });
-video.addEventListener('error', () => $('status').textContent = 'Video failed to load (doomsday.mp4). Use “Load another video…”.');
-video.play().catch(() => {});
+video.addEventListener('error', () => $('status').textContent = 'Video failed to load (doomsday.mp4). Use "Load another video…".');
+video.addEventListener('loadstart', () => video.play().catch(() => {}));
 const tex = new THREE.VideoTexture(video);
 tex.colorSpace = THREE.SRGBColorSpace;
 tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
