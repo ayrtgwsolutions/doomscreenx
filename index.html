@@ -20,9 +20,10 @@
   label{display:flex;justify-content:space-between;color:var(--mut);margin-top:8px}
   label b{color:var(--fg);font-weight:500}
   input[type=range]{width:100%;accent-color:var(--acc)}
-  button.b,label.file{display:block;box-sizing:border-box;width:100%;margin-top:6px;padding:8px;border:1px solid #33333a;border-radius:8px;
+  button.b,label.file,select.b{display:block;box-sizing:border-box;width:100%;margin-top:6px;padding:8px;border:1px solid #33333a;border-radius:8px;
     background:#1b1b21;color:var(--fg);cursor:pointer;text-align:center}
-  button.b:hover,label.file:hover{border-color:var(--acc)}
+  select.b{appearance:auto}
+  button.b:hover,label.file:hover,select.b:hover{border-color:var(--acc)}
   button.vr{background:var(--acc);color:#111;border:0;font-weight:600;padding:11px}
   .row{display:flex;gap:6px}
   video{display:none}
@@ -45,6 +46,7 @@
   <button class="b" id="xr">Enter VR</button>
 
   <h2>Video</h2>
+  <select class="b" id="vid"></select>
   <div class="row">
     <button class="b" id="pp">Pause</button>
     <button class="b" id="mute">Unmute</button>
@@ -136,11 +138,36 @@ rig.add(camera); scene.add(rig);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local');
 
+/* ---------- video list (files sit next to index.html) ---------- */
+const VIDEOS = [
+  ['28 Years Later: The Bone Temple', '28-years-later-bone-temple.mp4'],
+  ['Avatar: Fire and Ash', 'avatar-fire-and-ash.mp4'],
+  ['Dogstars', 'dogstars.mp4'],
+  ['Doomsday', 'doomsday.mp4'],
+  ['Endgame', 'endgame.mp4'],
+  ['Forgotten Island', 'forgotten_island.mp4'],
+  ['The Mandalorian & Grogu: Hang On', 'mandalorian-grogu-hang-on.mp4'],
+  ['The Mandalorian & Grogu', 'mandalorian-grogu.mp4'],
+  ['Masters of the Universe', 'masters-of-the-universe.mp4'],
+  ['Minions & Monsters', 'minions-monster.mp4'],
+  ['Moana', 'moana.mp4'],
+  ['Mortal Kombat', 'mortal-kombat.mp4'],
+  ['Project Hail Mary', 'project-hail-mary.mp4'],
+  ['Resident Evil', 'resident_evil.mp4'],
+  ['Spider-Man', 'spiderman.mp4'],
+  ['Supergirl', 'supergirl.mp4'],
+  ['Superman', 'superman.mp4'],
+  ['Toy Story 5', 'toystory5.mp4'],
+  ['Tron: Ares', 'tron-ares.mp4'],
+  ['Zootopia 2', 'zootopia-2.mp4'],
+];
+const DEFAULT_VIDEO = 'doomsday.mp4';
+
 /* ---------- video + shared screen material ---------- */
 const video = document.createElement('video');
 document.body.appendChild(video);
-Object.assign(video, { src: 'doomsday.mp4', loop: true, muted: true, playsInline: true, crossOrigin: 'anonymous' });
-video.addEventListener('error', () => $('status').textContent = 'Video failed to load (doomsday.mp4). Check that it is next to index.html.');
+Object.assign(video, { src: DEFAULT_VIDEO, loop: true, muted: true, playsInline: true, crossOrigin: 'anonymous' });
+video.addEventListener('error', () => $('status').textContent = 'Video failed to load (' + decodeURIComponent(video.src.split('/').pop()) + '). Check the file name and that it is next to index.html.');
 video.addEventListener('loadstart', () => video.play().catch(() => {}));
 const tex = new THREE.VideoTexture(video);
 tex.colorSpace = THREE.SRGBColorSpace;
@@ -331,6 +358,14 @@ xrBtn.onclick = async () => {
     await renderer.xr.setSession(sess);
     xrBtn.textContent = 'Exit VR';
   } catch (e) { $('status').textContent = 'Could not start VR: ' + (e.message || e); }
+};
+const vid = $('vid');
+for (const [title, file] of VIDEOS) vid.add(new Option(title, file, false, file === DEFAULT_VIDEO));
+vid.onchange = () => {
+  video.src = vid.value;                     // texture, mapping and lights carry over
+  video.play().catch(() => {});
+  $('pp').textContent = 'Pause';
+  $('status').textContent = 'Drag to look around';
 };
 $('exit').onclick = exitSplit;
 $('tog').onclick = () => $('side').classList.toggle('hide');
