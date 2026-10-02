@@ -25,12 +25,12 @@
   button.b:hover,label.file:hover{border-color:var(--acc)}
   button.vr{background:var(--acc);color:#111;border:0;font-weight:600;padding:11px}
   .row{display:flex;gap:6px}
+  video{display:none}
   #status{margin-top:10px;color:var(--mut);font-size:12px;min-height:16px}
   #exit{display:none;position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:4;
     padding:6px 14px;border:0;border-radius:99px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;cursor:pointer}
   body.split #side,body.split #tog{display:none}
   body.split #exit{display:block}
-  video{display:none}
 </style>
 <script type="importmap">
 {"imports":{
@@ -92,7 +92,7 @@ renderer.xr.setReferenceSpaceType('local');
 const video = document.createElement('video');
 document.body.appendChild(video);
 Object.assign(video, { src: 'doomsday.mp4', loop: true, muted: true, playsInline: true, crossOrigin: 'anonymous' });
-video.addEventListener('error', () => $('status').textContent = 'Video failed to load (doomsday.mp4). Use "Load another video…".');
+video.addEventListener('error', () => $('status').textContent = 'Video failed to load (doomsday.mp4). Check that it is next to index.html.');
 video.addEventListener('loadstart', () => video.play().catch(() => {}));
 const tex = new THREE.VideoTexture(video);
 tex.colorSpace = THREE.SRGBColorSpace;
@@ -117,12 +117,13 @@ new GLTFLoader().setDRACOLoader(draco).load('screenx.glb', gltf => {
       screens.push(o);
     } else {
       o.material = new THREE.MeshStandardMaterial({
-        color: 0x050505, // Change to 0x000000 for pure black
+        color: 0x050505,                      // 0x000000 for pure black
         roughness: 0.9,
         metalness: 0.1,
-        side: THREE.DoubleSide
-  });
+        side: THREE.DoubleSide                // walls: visible from inside
+      });
     }
+  });
   if (target) {                                // camera position = Camera Location Target Point
     const p = target.getWorldPosition(new THREE.Vector3());
     seat.set(p.x, p.y, Math.abs(p.z) < 5 ? DEFAULT_SEAT_Z : p.z);
